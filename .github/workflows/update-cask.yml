@@ -1,0 +1,61 @@
+name: update-cask
+
+# Pull model: this tap watches the source repo's releases and updates its own
+# cask. Everything runs with the built-in, ephemeral GITHUB_TOKEN scoped to this
+# repo, so no long-term or cross-repo credential is stored anywhere.
+
+on:
+  schedule:
+    - cron: '23 7 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  SOURCE_REPO: quizhats/font-dm-mono-nerd-font
+  CASK: Casks/font-dm-mono-nerd-font.rb
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Bump cask to latest verified release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          tag="$(gh release view --repo "$SOURCE_REPO" --json tagName --jq .tagName)"
+          version="${tag#v}"
+
+          current="$(sed -n -E 's/^  version "(.*)"/\1/p' "$CASK")"
+          if [ "$version" = "$current" ]; then
+            echo "Cask already at $version; nothing to do."
+            exit 0
+          fi
+
+          zip="DMMonoNerdFont-v${version}.zip"
+          gh release download "$tag" --repo "$SOURCE_REPO" --pattern "$zip" --output "$zip" --clobber
+
+          # Trust the artifact only if its build provenance verifies against the
+          # source repo's release workflow. Fails closed if the attestation is
+          # missing or does not match.
+          gh attestation verify "$zip" --repo "$SOURCE_REPO"
+
+          sha="$(shasum -a 256 "$zip" | cut -d' ' -f1)"
+          rm -f "$zip"
+
+          sed -i -E "s/^(  version )\".*\"/\1\"${version}\"/" "$CASK"
+          sed -i -E "s/^(  sha256 )\".*\"/\1\"${sha}\"/" "$CASK"
+
+          branch="bump-dm-mono-${version}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git commit -am "feat: update font-dm-mono-nerd-font to ${version}"
+          git push -u origin "$branch"
+          gh pr create --fill --base main --head "$branch"
