@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security report
+    url: https://github.com/quizhats/homebrew-fonts/security/advisories/new
+    about: Report a security vulnerability privately, not as a public issue.
+  - name: DM Mono Nerd Font (source repo)
+    url: https://github.com/quizhats/font-dm-mono-nerd-font/issues
+    about: Font rendering, glyphs, or build issues belong in the source repo.
