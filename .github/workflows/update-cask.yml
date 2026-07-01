@@ -2,7 +2,9 @@ name: update-cask
 
 # Pull model: this tap watches the source repo's releases and updates its own
 # cask. Everything runs with the built-in, ephemeral GITHUB_TOKEN scoped to this
-# repo, so no long-term or cross-repo credential is stored anywhere.
+# repo, so no long-term or cross-repo credential is stored anywhere. The bump
+# commit is created via the GitHub API so it is signed/verified (main requires
+# signed commits).
 
 on:
   schedule:
@@ -53,9 +55,28 @@ jobs:
           sed -i -E "s/^(  sha256 )\".*\"/\1\"${sha}\"/" "$CASK"
 
           branch="bump-dm-mono-${version}"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git switch -c "$branch"
-          git commit -am "feat: update font-dm-mono-nerd-font to ${version}"
-          git push -u origin "$branch"
-          gh pr create --fill --base main --head "$branch"
+          if gh api "repos/${GITHUB_REPOSITORY}/git/refs/heads/${branch}" >/dev/null 2>&1; then
+            echo "Branch ${branch} already exists; a bump PR is likely open. Skipping."
+            exit 0
+          fi
+
+          base_oid="$(git rev-parse HEAD)"
+
+          # Create the branch at HEAD, then add the commit through the GitHub API.
+          # API commits authored by GITHUB_TOKEN are signed by GitHub (verified),
+          # satisfying the "require signed commits" rule on main.
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+            -f "ref=refs/heads/${branch}" -f "sha=${base_oid}" >/dev/null
+
+          gh api graphql \
+            -f query='mutation($repo:String!,$branch:String!,$oid:GitObjectID!,$path:String!,$contents:Base64String!,$msg:String!){createCommitOnBranch(input:{branch:{repositoryNameWithOwner:$repo,branchName:$branch},expectedHeadOid:$oid,message:{headline:$msg},fileChanges:{additions:[{path:$path,contents:$contents}]}}){commit{oid}}}' \
+            -f repo="${GITHUB_REPOSITORY}" \
+            -f branch="${branch}" \
+            -f oid="${base_oid}" \
+            -f path="${CASK}" \
+            -f contents="$(base64 -w0 "$CASK")" \
+            -f msg="feat: update font-dm-mono-nerd-font to ${version}" >/dev/null
+
+          gh pr create --repo "${GITHUB_REPOSITORY}" --base main --head "${branch}" \
+            --title "feat: update font-dm-mono-nerd-font to ${version}" \
+            --body "Automated cask bump to ${version}. Release build-provenance attestation verified."
