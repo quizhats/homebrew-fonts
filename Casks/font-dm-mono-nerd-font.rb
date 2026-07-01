@@ -1,6 +1,6 @@
 cask "font-dm-mono-nerd-font" do
-  version "0.0.0"
-  sha256 "0000000000000000000000000000000000000000000000000000000000000000"
+  version "1.0.0"
+  sha256 "97f2ec5e4e64aca1ba48e2f1929879d0f1dd251847afcaf3159c3a15ec90e603"
 
   url "https://github.com/quizhats/font-dm-mono-nerd-font/releases/download/v#{version}/DMMonoNerdFont-v#{version}.zip"
   name "DM Mono Nerd Font"
